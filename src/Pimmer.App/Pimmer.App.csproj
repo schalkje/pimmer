@@ -10,7 +10,12 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>Pimmer.App</RootNamespace>
     <AssemblyName>Pimmer</AssemblyName>
+    <ApplicationIcon>pimmer.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="pimmer.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Pimmer.Core\Pimmer.Core.csproj" />

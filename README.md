@@ -31,6 +31,24 @@ Click **Sign in** and use **＋** in the top bar to add your second (admin) acco
 
 Pimmer requests only permissions your tenant has already granted to these Microsoft apps (`/.default`), so no consent or approval screen should appear. If you see "Approval required", cancel it and check that you're running the latest build. Tokens are delegated: Pimmer can never do more than your account can do in the portal.
 
+## Install (shortcut)
+
+```powershell
+.\scripts\publish.ps1                 # Release build → %LOCALAPPDATA%\Programs\Pimmer + Start menu & desktop shortcuts
+.\scripts\publish.ps1 -SelfContained  # bundle the .NET runtime (for machines without .NET 10)
+```
+
+Re-run the script to update; it stops a running installed instance first. For a second isolated instance, copy the shortcut and add `--profile admin` to its target.
+
+Run the published app via the **Pimmer** Start menu/desktop shortcut, or:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\Pimmer\Pimmer.exe"
+& "$env:LOCALAPPDATA\Programs\Pimmer\Pimmer.exe" --profile admin   # isolated second instance
+```
+
+From cmd.exe or Win+R use `%LOCALAPPDATA%\Programs\Pimmer\Pimmer.exe` instead.
+
 ## Docs
 
 - [Research](docs/research.md)
