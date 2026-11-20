@@ -1,0 +1,761 @@
+@implements IDisposable
+@inject PimService Pim
+@inject IJSRuntime JS
+
+@{
+    var accounts = Pim.Accounts;
+    var accountsById = accounts.ToDictionary(a => a.HomeAccountId);
+    var data = Pim.Store.Data;
+    var favorites = data.Favorites.ToHashSet();
+    var visible = _view == "recent" ? new List<PimItem>() : Visible(accountsById, favorites).ToList();
+    var orphans = _view == "recent" ? new List<string>() : OrphanKeys();
+    var selectedItems = Pim.Items.Where(i => _selected.Contains(i.Key)).ToList();
+}
+
+<div class="app">
+    <header class="topbar">
+        <div class="brand">🔑 Pimmer</div>
+        <div class="search">
+            <input id="search" @ref="_searchBox" placeholder="Search roles, apps, resources, groups…   Ctrl+K" value="@_search" autocomplete="off" spellcheck="false"
+                   @oninput="e => _search = e.Value?.ToString() ?? string.Empty"
+                   @onkeydown="e => OnSearchKey(e, visible)" />
+            @if (_search.Length > 0)
+            {
+                <button class="clear" title="Clear search (Esc)" @onclick="ClearSearch">✕</button>
+            }
+        </div>
+        <div class="accounts">
+            @foreach (var a in accounts)
+            {
+                <button class="chip @(_accountFilter.Count == 0 || _accountFilter.Contains(a.HomeAccountId) ? "on" : "off")" style="--c:@a.Color"
+                        title="@a.Upn — click to filter" @onclick="() => Toggle(_accountFilter, a.HomeAccountId)">
+                    <span class="dot"></span>@a.Label
+                </button>
+            }
+            <button class="icon" title="Add account" @onclick="AddAccount">＋</button>
+            <button class="icon @(Pim.IsRefreshing ? "spin" : "")" title="Refresh" @onclick="Refresh">⟳</button>
+            <button class="icon" title="Settings" @onclick="() => _showSettings = true">⚙</button>
+        </div>
+    </header>
+
+    @if (accounts.Count == 0)
+    {
+        <div class="empty-state">
+            <h1>Welcome to Pimmer</h1>
+            <p>Sign in with your account(s) to see and activate your PIM roles, groups and Azure resource roles.<br />
+               You can add both your <b>user</b> and <b>admin</b> account.</p>
+            <button class="primary big" @onclick="AddAccount">Sign in</button>
+        </div>
+    }
+    else
+    {
+        <div class="body">
+            <nav class="sidebar">
+                @NavItem("favorites", "★", "Favorites", Pim.Items.Count(i => favorites.Contains(i.Key)))
+                @NavItem("active", "⚡", "Active", Pim.Items.Count(i => i.State == PimState.Active))
+                @NavItem("recent", "🕑", "Recent", null)
+                @NavItem("pending", "⏳", "Pending", Pim.Items.Count(i => i.State == PimState.PendingApproval))
+                @NavItem("all", "▦", "All", Pim.Items.Count)
+
+                <div class="nav-header">
+                    <span>My groups</span>
+                    <button class="icon small" title="New group" @onclick="NewGroup">＋</button>
+                </div>
+                @foreach (var g in data.Groups)
+                {
+                    var group = g;
+                    var id = "group:" + group.Id;
+                    <div class="nav-item group @(_view == id ? "active" : "")" @onclick="() => SetView(id)">
+                        <span class="label">▸ @group.Name</span>
+                        <span class="count">@group.ItemKeys.Count</span>
+                        <span class="group-tools" @onclick:stopPropagation="true">
+                            <button class="icon small" title="Rename" @onclick="() => RenameGroup(group)">✎</button>
+                            <button class="icon small" title="Defaults (justification / duration)" @onclick="() => GroupDefaults(group)">⚙</button>
+                            <button class="icon small" title="Move up" @onclick="() => Pim.Store.MoveGroup(group.Id, -1)">↑</button>
+                            <button class="icon small" title="Move down" @onclick="() => Pim.Store.MoveGroup(group.Id, 1)">↓</button>
+                            <button class="icon small" title="Delete" @onclick="() => DeleteGroup(group)">🗑</button>
+                        </span>
+                        <button class="play" title="Activate group" @onclick:stopPropagation="true" @onclick="() => ActivateGroup(group)">▶</button>
+                    </div>
+                }
+                @if (data.Groups.Count == 0)
+                {
+                    <div class="hint">Create a group (e.g. “Daily ops”) to activate several items at once.</div>
+                }
+            </nav>
+
+            <main class="content">
+                @if (_view == "recent")
+                {
+                    @RecentView(accountsById)
+                }
+                else
+                {
+                    <div class="filters">
+                        <input type="checkbox" title="Select all visible" checked="@(visible.Count > 0 && visible.All(i => _selected.Contains(i.Key)))"
+                               @onchange="() => ToggleSelectAll(visible)" />
+                        @foreach (var k in Enum.GetValues<PimKind>())
+                        {
+                            var kind = k;
+                            <button class="filter @(_kinds.Contains(kind) ? "on" : "")" @onclick="() => Toggle(_kinds, kind)">@PimKeys.KindLabel(kind)</button>
+                        }
+                        <span class="sep"></span>
+                        @foreach (var s in Enum.GetValues<PimState>())
+                        {
+                            var state = s;
+                            <button class="filter @(_states.Contains(state) ? "on" : "")" @onclick="() => Toggle(_states, state)">@StateLabel(state)</button>
+                        }
+                        <span class="grow"></span>
+                        <span class="muted">@visible.Count item(s)</span>
+                    </div>
+
+                    <div class="list">
+                        @foreach (var item in visible)
+                        {
+                            @Row(item, accountsById, favorites)
+                        }
+                        @foreach (var key in orphans)
+                        {
+                            var k = key;
+                            <div class="row orphan" @key="k">
+                                <span></span><span></span>
+                                <div class="main">
+                                    <div class="title">@OrphanName(k)</div>
+                                    <div class="sub">no longer eligible (or account removed)</div>
+                                </div>
+                                <span></span><span></span>
+                                <div class="actions"><button class="ghost" @onclick="() => RemoveOrphan(k)">Remove</button></div>
+                            </div>
+                        }
+                        @if (visible.Count == 0 && orphans.Count == 0)
+                        {
+                            <div class="empty">@EmptyText()</div>
+                        }
+                    </div>
+                }
+            </main>
+        </div>
+    }
+
+    <footer class="footer">
+        @if (selectedItems.Count > 0)
+        {
+            var eligibleCount = selectedItems.Count(i => i.State == PimState.Eligible);
+            var activeCount = selectedItems.Count(i => i.State == PimState.Active);
+            <div class="bulk">
+                <span><b>@selectedItems.Count</b> selected</span>
+                <button class="primary" disabled="@(eligibleCount == 0)" @onclick="() => OpenDialog(selectedItems, DialogMode.Activate, null)">Activate (@eligibleCount)…</button>
+                <button disabled="@(activeCount == 0)" @onclick="() => Deactivate(selectedItems)">Deactivate (@activeCount)</button>
+                <select value="" @onchange="e => AddSelectedToGroup(e.Value?.ToString())">
+                    <option value="">Add to group…</option>
+                    @foreach (var g in data.Groups)
+                    {
+                        <option value="@g.Id">@g.Name</option>
+                    }
+                    <option value="__new">＋ New group…</option>
+                </select>
+                @if (_view.StartsWith("group:"))
+                {
+                    <button @onclick="RemoveSelectedFromGroup">Remove from group</button>
+                }
+                <button class="ghost" @onclick="() => _selected.Clear()">Clear</button>
+            </div>
+        }
+        <div class="status">
+            @if (Pim.IsRefreshing)
+            {
+                <span>Refreshing…</span>
+            }
+            else if (Pim.LastRefreshed is { } at)
+            {
+                <span>Refreshed @at.ToLocalTime().ToString("HH:mm")</span>
+            }
+            @foreach (var (key, message) in Pim.SourceErrors)
+            {
+                var parts = key.Split('|');
+                var label = accountsById.TryGetValue(parts[0], out var a) ? a.Label : "?";
+                <span class="warn" title="@message" @onclick="Refresh">⚠ @label · @PimKeys.KindLabel(Enum.Parse<PimKind>(parts[1])): @Shorten(message) (retry)</span>
+            }
+        </div>
+    </footer>
+
+    <div class="toasts">
+        @foreach (var t in _toasts)
+        {
+            var toast = t;
+            <div class="toast @toast.Kind">
+                <span>@toast.Text</span>
+                @if (toast.Action is not null)
+                {
+                    <button class="ghost" @onclick="async () => { _toasts.Remove(toast); await toast.Action(); }">@toast.ActionLabel</button>
+                }
+                <button class="icon small" @onclick="() => _toasts.Remove(toast)">✕</button>
+            </div>
+        }
+    </div>
+</div>
+
+@if (_dialog is not null)
+{
+    <ActivationDialog Model="_dialog" RecentJustifications="data.RecentJustifications" OnSubmit="SubmitDialog" OnCancel="() => _dialog = null" />
+}
+
+@if (_showSettings)
+{
+    <SettingsDialog OnClose="() => _showSettings = false" />
+}
+
+@code {
+    private string _view = "favorites";
+    private string _search = "";
+    private readonly HashSet<PimKind> _kinds = [];
+    private readonly HashSet<PimState> _states = [];
+    private readonly HashSet<string> _accountFilter = [];
+    private readonly HashSet<string> _selected = [];
+    private readonly HashSet<string> _warned = [];
+    private readonly List<Toast> _toasts = [];
+    private DialogModel? _dialog;
+    private bool _showSettings;
+    private Timer? _timer;
+    private ElementReference _searchBox;
+
+    private async Task ClearSearch()
+    {
+        _search = "";
+        await _searchBox.FocusAsync();
+    }
+
+    private sealed record Toast(string Text, string Kind, string? ActionLabel = null, Func<Task>? Action = null);
+
+    protected override void OnInitialized()
+    {
+        Pim.Changed += OnChanged;
+        Pim.Store.Changed += OnChanged;
+        if (Pim.Store.Data.Favorites.Count == 0) _view = "all";
+        if (Pim.Accounts.Count > 0) _ = SafeRefresh();
+        _timer = new Timer(_ => InvokeAsync(TickAsync), null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
+    }
+
+    public void Dispose()
+    {
+        Pim.Changed -= OnChanged;
+        Pim.Store.Changed -= OnChanged;
+        _timer?.Dispose();
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task TickAsync()
+    {
+        var settings = Pim.Store.Data.Settings;
+        if (Pim.Accounts.Count > 0 && !Pim.IsRefreshing &&
+            (Pim.LastRefreshed is null || DateTimeOffset.Now - Pim.LastRefreshed >= TimeSpan.FromSeconds(Math.Max(15, settings.RefreshSeconds))))
+            _ = SafeRefresh();
+
+        foreach (var item in Pim.Items.Where(i => i.State == PimState.Active && i.ActiveUntil is not null))
+        {
+            var left = item.ActiveUntil!.Value - DateTimeOffset.Now;
+            var warnKey = $"{item.Key}|{item.ActiveUntil:O}";
+            if (left > TimeSpan.Zero && left <= TimeSpan.FromMinutes(settings.ExpiryWarningMinutes) && _warned.Add(warnKey))
+            {
+                var target = item;
+                AddToast($"{Name(item)} expires in {Iso8601.Friendly(left)}", "warn", "Extend",
+                    () => { OpenDialog([target], DialogMode.Extend, null); return Task.CompletedTask; });
+            }
+        }
+        StateHasChanged();
+        await Task.CompletedTask;
+    }
+
+    private async Task SafeRefresh()
+    {
+        try { await Pim.RefreshAsync(); }
+        catch (Exception ex) { AddToast(ErrorMapper.ToFriendly(ex), "error"); }
+    }
+
+    // ---------- Views & filtering ----------
+
+    private void SetView(string view)
+    {
+        _view = view;
+        _selected.Clear();
+    }
+
+    private IEnumerable<PimItem> Visible(Dictionary<string, AccountRef> accounts, HashSet<string> favorites)
+    {
+        IEnumerable<PimItem> source = Pim.Items;
+        PimGroup? group = null;
+        if (_view.StartsWith("group:"))
+        {
+            group = Pim.Store.Data.Groups.FirstOrDefault(g => "group:" + g.Id == _view);
+            var keys = group?.ItemKeys.ToHashSet() ?? [];
+            source = source.Where(i => keys.Contains(i.Key));
+        }
+        else
+        {
+            source = _view switch
+            {
+                "favorites" => source.Where(i => favorites.Contains(i.Key)),
+                "active" => source.Where(i => i.State == PimState.Active),
+                "pending" => source.Where(i => i.State == PimState.PendingApproval),
+                _ => source
+            };
+        }
+
+        if (_kinds.Count > 0) source = source.Where(i => _kinds.Contains(i.Kind));
+        if (_states.Count > 0) source = source.Where(i => _states.Contains(i.State));
+        if (_accountFilter.Count > 0) source = source.Where(i => _accountFilter.Contains(i.AccountId));
+        source = source.Where(i => SearchMatcher.Matches(_search, i, accounts.TryGetValue(i.AccountId, out var a) ? a.Label : null));
+
+        if (group is not null)
+            return source.OrderBy(i => group.ItemKeys.IndexOf(i.Key));
+        return source
+            .OrderBy(i => i.State switch { PimState.Active => 0, PimState.PendingApproval => 1, _ => 2 })
+            .ThenByDescending(i => favorites.Contains(i.Key))
+            .ThenBy(i => i.Kind == PimKind.Group ? i.DisplayName : i.ScopeName ?? i.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(i => i.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(i => i.ScopeDisplay, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private List<string> OrphanKeys()
+    {
+        if (!string.IsNullOrWhiteSpace(_search) || Pim.IsRefreshing || Pim.LastRefreshed is null) return [];
+        var existing = Pim.Items.Select(i => i.Key).ToHashSet();
+        IEnumerable<string> keys = _view switch
+        {
+            "favorites" => Pim.Store.Data.Favorites,
+            _ when _view.StartsWith("group:") => Pim.Store.Data.Groups.FirstOrDefault(g => "group:" + g.Id == _view)?.ItemKeys ?? [],
+            _ => []
+        };
+        return keys.Where(k => !existing.Contains(k)).ToList();
+    }
+
+    private string OrphanName(string key) =>
+        Pim.Store.Data.History.FirstOrDefault(h => h.ItemKey == key) is { } h ? $"{h.DisplayName} — {h.ScopeDisplay}" : key;
+
+    private void RemoveOrphan(string key)
+    {
+        if (_view == "favorites") Pim.Store.Update(d => d.Favorites.Remove(key));
+        else if (_view.StartsWith("group:")) Pim.Store.RemoveFromGroup(_view[6..], [key]);
+    }
+
+    private string EmptyText() => _view switch
+    {
+        "favorites" when string.IsNullOrWhiteSpace(_search) => "No favorites yet. Star (☆) items in “All” to pin them here.",
+        "active" => "Nothing active right now.",
+        "pending" => "No pending requests.",
+        _ when _view.StartsWith("group:") && string.IsNullOrWhiteSpace(_search) => "This group is empty. Select items in “All” and use “Add to group…”.",
+        _ => Pim.IsRefreshing ? "Loading…" : "No matching items."
+    };
+
+    private static void Toggle<T>(HashSet<T> set, T value)
+    {
+        if (!set.Add(value)) set.Remove(value);
+    }
+
+    private void ToggleSelectAll(List<PimItem> visible)
+    {
+        if (visible.All(i => _selected.Contains(i.Key))) foreach (var i in visible) _selected.Remove(i.Key);
+        else foreach (var i in visible) _selected.Add(i.Key);
+    }
+
+    private async Task OnSearchKey(KeyboardEventArgs e, List<PimItem> visible)
+    {
+        if (e.Key == "Escape") _search = "";
+        if (e.Key == "Enter")
+        {
+            var eligible = visible.Where(i => i.State == PimState.Eligible).ToList();
+            if (eligible.Count == 1) await QuickActivate(eligible[0], e.ShiftKey);
+            else if (eligible.Count > 1) AddToast("Several matches: refine the search or select items.", "info");
+        }
+    }
+
+    private static string StateLabel(PimState s) => s switch
+    {
+        PimState.Eligible => "Eligible",
+        PimState.Active => "Active",
+        PimState.PendingApproval => "Pending",
+        _ => s.ToString()
+    };
+
+    private static string Remaining(DateTimeOffset? until)
+    {
+        if (until is null) return "no end time";
+        var left = until.Value - DateTimeOffset.Now;
+        return left <= TimeSpan.Zero ? "expiring…" : Iso8601.Friendly(left) + " left";
+    }
+
+    private static string Shorten(string s) => s.Length > 60 ? s[..57] + "…" : s;
+
+    // ---------- Rendering helpers ----------
+
+    /// <summary>Scoped items lead with the target (resource, app, group) and show the role as a coloured pill.</summary>
+    public static RenderFragment Headline(PimItem item)
+    {
+        var target = item.Kind == PimKind.Group ? item.DisplayName : item.ScopeName;
+        var role = item.Kind == PimKind.Group ? (item.Access == GroupAccess.Owner ? "Owner" : "Member") : item.DisplayName;
+        return target is null
+            ? @<span class="target">@item.DisplayName</span>
+            : @<text><span class="target">@target</span><span class="role" style="--h:@Hue(role)" title="Role">@role</span></text>;
+    }
+
+    private static string Name(PimItem item) => item.ScopeName is { } n ? $"{item.DisplayName} on {n}" : item.DisplayName;
+
+    private static string SubText(PimItem item)
+    {
+        if (item.Kind == PimKind.Group) return "PIM group";
+        var s = item.ScopeDisplay;
+        if (item.Kind == PimKind.AzureResource && item.ScopeName is not null)
+        {
+            var parts = item.ScopeId.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var parent = s.EndsWith(" / " + item.ScopeName, StringComparison.Ordinal) ? s[..^(item.ScopeName.Length + 3)] : "";
+            return parts.Length switch
+            {
+                _ when item.ScopeId.Contains("/managementGroups/", StringComparison.OrdinalIgnoreCase) => "Management group",
+                2 => "Subscription",
+                4 => $"Resource group · {parent}",
+                _ => $"{parts[^2]} · {parent}"
+            };
+        }
+        if (item.ScopeName is { } n)
+        {
+            if (s.EndsWith(": " + n, StringComparison.Ordinal)) return s[..^(n.Length + 2)];
+            if (s.EndsWith(" / " + n, StringComparison.Ordinal)) return s[..^(n.Length + 3)];
+        }
+        return s;
+    }
+
+    private static int Hue(string text)
+    {
+        uint h = 2166136261;
+        foreach (var c in text.ToLowerInvariant()) h = (h ^ c) * 16777619;
+        return (int)(h % 360);
+    }
+
+    private RenderFragment NavItem(string view, string icon, string label, int? count) =>
+        @<div class="nav-item @(_view == view ? "active" : "")" @onclick="() => SetView(view)">
+            <span class="label"><span class="nav-icon">@icon</span>@label</span>
+            @if (count is not null) { <span class="count">@count</span> }
+        </div>;
+
+    private RenderFragment Requirements(PimItem item) => @<span class="reqs">
+        @if (item.Policy is { } p)
+        {
+            @if (p.AuthContextId is not null) { <span title="Conditional Access authentication context @p.AuthContextId required">🔐 @p.AuthContextId</span> }
+            else if (p.RequiresMfa) { <span title="MFA required">🔐 MFA</span> }
+            @if (p.RequiresJustification) { <span title="Justification required">📝</span> }
+            @if (p.RequiresTicket) { <span title="Ticket required">🎫</span> }
+            @if (p.RequiresApproval) { <span title="Approval required">✋ approval</span> }
+            <span title="Maximum activation duration">max @Iso8601.Friendly(p.MaxDuration)</span>
+        }
+    </span>;
+
+    private RenderFragment Row(PimItem item, Dictionary<string, AccountRef> accounts, HashSet<string> favorites)
+    {
+        var account = accounts.GetValueOrDefault(item.AccountId);
+        var isFavorite = favorites.Contains(item.Key);
+        var op = Pim.Operations.GetValueOrDefault(item.Key);
+        var busy = op?.State == OperationState.Running;
+        return @<div class="row state-@item.State.ToString().ToLowerInvariant() @(_selected.Contains(item.Key) ? "sel" : "")" @key="item.Key">
+            <input type="checkbox" checked="@_selected.Contains(item.Key)" @onchange="() => Toggle(_selected, item.Key)" />
+            <button class="star @(isFavorite ? "on" : "")" title="Favorite" @onclick="() => Pim.Store.ToggleFavorite(item.Key)">@(isFavorite ? "★" : "☆")</button>
+            <div class="main" @onclick="() => Toggle(_selected, item.Key)">
+                <div class="title">@Headline(item) <span class="kind k-@item.Kind">@PimKeys.KindLabel(item.Kind)</span></div>
+                <div class="sub"><span title="@item.ScopeId">@SubText(item)</span> @Requirements(item)</div>
+            </div>
+            <div class="acct" style="--c:@(account?.Color ?? "#888")" title="@account?.Upn"><span class="dot"></span>@(account?.Label ?? "?")</div>
+            <div class="state">
+                @if (op is not null)
+                {
+                    <span class="op op-@op.State.ToString().ToLowerInvariant()" title="@op.Message">
+                        @(op.State switch { OperationState.Running => "⏳", OperationState.Succeeded => "✅", OperationState.Pending => "🕓", _ => "❌" })
+                        @Shorten(op.Message)
+                    </span>
+                    @if (op.State == OperationState.Failed) { <button class="icon small" title="Dismiss" @onclick="() => Pim.DismissOperation(item.Key)">✕</button> }
+                }
+                else if (item.State == PimState.Active)
+                {
+                    <span class="badge active" title="Until @item.ActiveUntil?.ToLocalTime()">ACTIVE · @Remaining(item.ActiveUntil)</span>
+                }
+                else if (item.State == PimState.PendingApproval)
+                {
+                    <span class="badge pending">Pending approval</span>
+                }
+                else if (item.EligibleUntil is { } eu && eu - DateTimeOffset.Now < TimeSpan.FromDays(30))
+                {
+                    <span class="muted" title="Eligibility ends @eu.ToLocalTime()">eligible until @eu.ToLocalTime().ToString("d MMM")</span>
+                }
+            </div>
+            <div class="actions">
+                @switch (item.State)
+                {
+                    case PimState.Eligible:
+                        <button class="play" disabled="@busy" title="Activate (Shift+click for options)" @onclick="e => QuickActivate(item, e.ShiftKey)">▶</button>
+                        break;
+                    case PimState.Active:
+                        <button class="ghost" disabled="@busy" @onclick="() => OpenDialog([item], DialogMode.Extend, null)">Extend</button>
+                        <button class="stop" disabled="@busy" title="Deactivate" @onclick="() => Deactivate([item])">■</button>
+                        break;
+                    case PimState.PendingApproval:
+                        <button class="ghost" disabled="@busy" @onclick="() => CancelRequest(item)">Cancel</button>
+                        break;
+                }
+            </div>
+        </div>;
+    }
+
+    private RenderFragment RecentView(Dictionary<string, AccountRef> accounts)
+    {
+        var itemsByKey = Pim.Items.ToDictionary(i => i.Key);
+        var entries = Pim.Store.Data.History
+            .Where(h => h.Action == "Activate")
+            .Where(h => _accountFilter.Count == 0 || _accountFilter.Contains(h.AccountId))
+            .Where(h => SearchMatcher.Matches(_search, h.DisplayName, h.ScopeDisplay, h.Justification, accounts.GetValueOrDefault(h.AccountId)?.Label))
+            .DistinctBy(h => h.ItemKey)
+            .Take(40)
+            .ToList();
+        return @<div class="list">
+            @foreach (var h in entries)
+            {
+                var entry = h;
+                var account = accounts.GetValueOrDefault(entry.AccountId);
+                var current = itemsByKey.GetValueOrDefault(entry.ItemKey);
+                <div class="row" @key="entry.ItemKey">
+                    <span></span>
+                    <span></span>
+                    <div class="main">
+                        <div class="title">@entry.DisplayName <span class="kind k-@entry.Kind">@PimKeys.KindLabel(entry.Kind)</span></div>
+                        <div class="sub">@entry.ScopeDisplay · @entry.At.ToLocalTime().ToString("ddd d MMM HH:mm") · @Iso8601.Friendly(TimeSpan.FromMinutes(entry.DurationMinutes)) · “@entry.Justification”</div>
+                    </div>
+                    <div class="acct" style="--c:@(account?.Color ?? "#888")"><span class="dot"></span>@(account?.Label ?? "?")</div>
+                    <div class="state">
+                        @if (current?.State == PimState.Active) { <span class="badge active">ACTIVE · @Remaining(current.ActiveUntil)</span> }
+                        else if (current is null) { <span class="muted">not eligible</span> }
+                        else if (Pim.Operations.GetValueOrDefault(entry.ItemKey) is { } op) { <span class="op op-@op.State.ToString().ToLowerInvariant()">@Shorten(op.Message)</span> }
+                    </div>
+                    <div class="actions">
+                        @if (current?.State == PimState.Eligible)
+                        {
+                            <button class="ghost" @onclick="() => ActivateAgain(current, entry)">▶ Again</button>
+                        }
+                    </div>
+                </div>
+            }
+            @if (entries.Count == 0)
+            {
+                <div class="empty">No recent activations yet.</div>
+            }
+        </div>;
+    }
+
+    // ---------- Actions ----------
+
+    private async Task AddAccount()
+    {
+        try
+        {
+            var account = await Pim.AddAccountAsync();
+            AddToast($"Signed in as {account.Upn} ({account.Label}). Change the label in Settings.", "success");
+        }
+        catch (Exception ex)
+        {
+            AddToast(ErrorMapper.ToFriendly(ex), "error");
+        }
+    }
+
+    private Task Refresh() => SafeRefresh();
+
+    private async Task QuickActivate(PimItem item, bool showDialog)
+    {
+        var data = Pim.Store.Data;
+        var policy = await Pim.GetPolicyAsync(item);
+        var justification = data.RecentJustifications.FirstOrDefault();
+        var minutes = data.LastDurationMinutes ?? data.Settings.DefaultDurationMinutes;
+        if (showDialog || policy is null || policy.RequiresTicket || (policy.RequiresJustification && string.IsNullOrWhiteSpace(justification)))
+        {
+            OpenDialog([item], DialogMode.Activate, null);
+            return;
+        }
+        await RunActivation([Pim.WithLatest(item)], new ActivationRequest(TimeSpan.FromMinutes(minutes), justification, null, null));
+    }
+
+    private async Task ActivateAgain(PimItem item, HistoryEntry entry)
+    {
+        var policy = await Pim.GetPolicyAsync(item);
+        var request = new ActivationRequest(TimeSpan.FromMinutes(Math.Max(5, entry.DurationMinutes)), entry.Justification, entry.Ticket, null);
+        if (policy is null || PimService.Validate(Pim.WithLatest(item), request) is not null)
+        {
+            OpenDialog([item], DialogMode.Activate, null, request);
+            return;
+        }
+        await RunActivation([Pim.WithLatest(item)], request);
+    }
+
+    private void ActivateGroup(PimGroup group)
+    {
+        var keys = group.ItemKeys.ToHashSet();
+        var items = Pim.Items.Where(i => keys.Contains(i.Key) && i.State == PimState.Eligible).ToList();
+        if (items.Count == 0)
+        {
+            AddToast($"Nothing to activate in “{group.Name}” (all active, pending or not eligible).", "info");
+            return;
+        }
+        OpenDialog(items, DialogMode.Activate, group);
+    }
+
+    private async void OpenDialog(List<PimItem> items, DialogMode mode, PimGroup? group, ActivationRequest? prefill = null)
+    {
+        var data = Pim.Store.Data;
+        var targets = items.Where(i => i.State == (mode == DialogMode.Activate ? PimState.Eligible : PimState.Active)).ToList();
+        if (targets.Count == 0) return;
+        var dialog = new DialogModel
+        {
+            Mode = mode,
+            Items = targets,
+            Title = group is not null ? $"Activate “{group.Name}”" : $"{mode} {targets.Count} item(s)",
+            DurationMinutes = (int?)prefill?.Duration.TotalMinutes ?? group?.DefaultDurationMinutes ?? data.LastDurationMinutes ?? data.Settings.DefaultDurationMinutes,
+            Justification = prefill?.Justification ?? group?.DefaultJustification ?? data.RecentJustifications.FirstOrDefault() ?? "",
+            TicketNumber = prefill?.TicketNumber ?? "",
+            Loading = true
+        };
+        _dialog = dialog;
+        StateHasChanged();
+        try { await Pim.EnsurePoliciesAsync(targets); }
+        catch (Exception ex) { AddToast("Could not load policies: " + ErrorMapper.ToFriendly(ex), "warn"); }
+        dialog.Items = [.. targets.Select(Pim.WithLatest)];
+        dialog.Loading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SubmitDialog(ActivationRequest request)
+    {
+        var dialog = _dialog!;
+        _dialog = null;
+        if (dialog.Mode == DialogMode.Extend)
+        {
+            var results = await Pim.ExtendAsync(dialog.Items, request);
+            Summarize("Extended", results);
+        }
+        else
+        {
+            await RunActivation(dialog.Items, request);
+        }
+    }
+
+    private async Task RunActivation(List<PimItem> items, ActivationRequest request)
+    {
+        _selected.Clear();
+        var results = await Pim.ActivateAsync(items, request);
+        Summarize("Activated", results);
+    }
+
+    private async Task Deactivate(List<PimItem> items)
+    {
+        var active = items.Where(i => i.State == PimState.Active).ToList();
+        if (active.Count == 0) return;
+        _selected.Clear();
+        var results = await Pim.DeactivateAsync(active);
+        Summarize("Deactivated", results);
+    }
+
+    private async Task CancelRequest(PimItem item)
+    {
+        var result = await Pim.CancelRequestAsync(item);
+        if (result.State == OperationState.Failed) AddToast($"{Name(item)}: {result.Message}", "error");
+        else AddToast($"Cancelled request for {Name(item)}.", "success");
+    }
+
+    private void Summarize(string verb, IReadOnlyList<ItemResult> results)
+    {
+        if (results.Count == 0) return;
+        var ok = results.Count(r => r.State == OperationState.Succeeded);
+        var pending = results.Count(r => r.State == OperationState.Pending);
+        var failed = results.Where(r => r.State == OperationState.Failed).ToList();
+        if (results.Count == 1)
+        {
+            var r = results[0];
+            AddToast(r.State switch
+            {
+                OperationState.Succeeded => $"{verb}: {Name(r.Item)}",
+                OperationState.Pending => $"Pending approval: {Name(r.Item)}",
+                _ => $"{Name(r.Item)}: {r.Message}"
+            }, r.State == OperationState.Failed ? "error" : "success");
+            return;
+        }
+        var text = $"{verb} {ok}" + (pending > 0 ? $", {pending} pending approval" : "") + (failed.Count > 0 ? $", {failed.Count} failed" : "");
+        AddToast(text, failed.Count > 0 ? "error" : "success");
+    }
+
+    private void AddToast(string text, string kind, string? actionLabel = null, Func<Task>? action = null)
+    {
+        var toast = new Toast(text, kind, actionLabel, action);
+        _toasts.Add(toast);
+        if (_toasts.Count > 5) _toasts.RemoveAt(0);
+        _ = Task.Delay(kind == "error" || action is not null ? 15000 : 6000).ContinueWith(_ => InvokeAsync(() =>
+        {
+            _toasts.Remove(toast);
+            StateHasChanged();
+        }));
+        InvokeAsync(StateHasChanged);
+    }
+
+    // ---------- Groups ----------
+
+    private async Task NewGroup()
+    {
+        var name = await JS.InvokeAsync<string?>("prompt", "Name of the new group", "");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var group = Pim.Store.AddGroup(name);
+        SetView("group:" + group.Id);
+    }
+
+    private async Task RenameGroup(PimGroup group)
+    {
+        var name = await JS.InvokeAsync<string?>("prompt", "Rename group", group.Name);
+        if (string.IsNullOrWhiteSpace(name)) return;
+        Pim.Store.Update(d => d.Groups.First(g => g.Id == group.Id).Name = name.Trim());
+    }
+
+    private async Task GroupDefaults(PimGroup group)
+    {
+        var justification = await JS.InvokeAsync<string?>("prompt", $"Default justification for “{group.Name}” (empty = last used)", group.DefaultJustification ?? "");
+        if (justification is null) return;
+        var duration = await JS.InvokeAsync<string?>("prompt", "Default duration in minutes (empty = last used)", group.DefaultDurationMinutes?.ToString() ?? "");
+        if (duration is null) return;
+        Pim.Store.Update(d =>
+        {
+            var g = d.Groups.First(x => x.Id == group.Id);
+            g.DefaultJustification = string.IsNullOrWhiteSpace(justification) ? null : justification.Trim();
+            g.DefaultDurationMinutes = int.TryParse(duration, out var m) && m > 0 ? m : null;
+        });
+    }
+
+    private async Task DeleteGroup(PimGroup group)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete group “{group.Name}”? (The roles themselves are not affected.)")) return;
+        Pim.Store.Update(d => d.Groups.RemoveAll(g => g.Id == group.Id));
+        if (_view == "group:" + group.Id) SetView("all");
+    }
+
+    private async Task AddSelectedToGroup(string? groupId)
+    {
+        if (string.IsNullOrEmpty(groupId)) return;
+        if (groupId == "__new")
+        {
+            var name = await JS.InvokeAsync<string?>("prompt", "Name of the new group", "");
+            if (string.IsNullOrWhiteSpace(name)) return;
+            groupId = Pim.Store.AddGroup(name).Id;
+        }
+        var count = _selected.Count;
+        Pim.Store.AddToGroup(groupId, _selected);
+        var groupName = Pim.Store.Data.Groups.FirstOrDefault(g => g.Id == groupId)?.Name;
+        _selected.Clear();
+        AddToast($"Added {count} item(s) to “{groupName}”.", "success");
+    }
+
+    private void RemoveSelectedFromGroup()
+    {
+        Pim.Store.RemoveFromGroup(_view[6..], _selected);
+        _selected.Clear();
+    }
+}

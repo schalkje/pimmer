@@ -1,0 +1,116 @@
+@inject PimService Pim
+
+<div class="overlay">
+    <div class="dialog wide">
+        <h2>Settings</h2>
+
+        <h3>Accounts</h3>
+        @foreach (var a in _accounts)
+        {
+            var account = a;
+            <div class="account-row">
+                <input type="color" value="@account.Color" @onchange="e => Set(account, account with { Color = e.Value?.ToString() ?? account.Color })" title="Color" />
+                <input class="label-input" value="@account.Label" @onchange="e => Set(account, account with { Label = e.Value?.ToString() ?? account.Label })" />
+                <span class="muted grow">@account.Upn</span>
+                <button class="icon small" title="Move up" @onclick="() => Move(account, -1)">↑</button>
+                <button class="icon small" title="Move down" @onclick="() => Move(account, 1)">↓</button>
+                <button class="ghost" @onclick="() => Remove(account)">Sign out</button>
+            </div>
+        }
+
+        <h3>Defaults</h3>
+        <div class="two">
+            <div><label>Default duration (minutes)</label><input type="number" min="5" @bind="_settings.DefaultDurationMinutes" /></div>
+            <div><label>Auto-refresh (seconds)</label><input type="number" min="15" @bind="_settings.RefreshSeconds" /></div>
+        </div>
+        <div class="two">
+            <div><label>Expiry warning (minutes before end)</label><input type="number" min="0" @bind="_settings.ExpiryWarningMinutes" /></div>
+            <div></div>
+        </div>
+
+        <h3>Authentication <span class="muted">(applies after restart)</span></h3>
+        <label>Tenant (id, domain or “organizations”)</label>
+        <input @bind="_settings.TenantId" />
+        <div class="two">
+            <div><label>Graph client id</label><input @bind="_settings.GraphClientId" /></div>
+            <div><label>Azure (ARM) client id</label><input @bind="_settings.ArmClientId" /></div>
+        </div>
+        <label class="check"><input type="checkbox" @bind="_settings.UseBroker" /> Use Windows sign-in broker (WAM)</label>
+        <div class="muted small">
+            Defaults: Microsoft Graph PowerShell (@PimmerSettings.GraphPowerShellClientId) and Azure PowerShell (@PimmerSettings.AzurePowerShellClientId).
+            <button class="link" @onclick="ResetAuth">Reset to defaults</button>
+        </div>
+        <div class="muted small">Data folder: @Pim.Store.DataDirectory</div>
+
+        <div class="dialog-buttons">
+            <button class="ghost" @onclick="OnClose">Cancel</button>
+            <button class="primary" @onclick="Save">Save</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private PimmerSettings _settings = new();
+    private List<AccountRef> _accounts = [];
+
+    protected override void OnInitialized()
+    {
+        var s = Pim.Store.Data.Settings;
+        _settings = new PimmerSettings
+        {
+            TenantId = s.TenantId,
+            GraphClientId = s.GraphClientId,
+            ArmClientId = s.ArmClientId,
+            UseBroker = s.UseBroker,
+            DefaultDurationMinutes = s.DefaultDurationMinutes,
+            RefreshSeconds = s.RefreshSeconds,
+            ExpiryWarningMinutes = s.ExpiryWarningMinutes,
+        };
+        _accounts = [.. Pim.Accounts];
+    }
+
+    private void Set(AccountRef old, AccountRef updated)
+    {
+        var i = _accounts.FindIndex(a => a.HomeAccountId == old.HomeAccountId);
+        if (i >= 0) _accounts[i] = updated;
+        Pim.UpdateAccount(updated);
+    }
+
+    private void Move(AccountRef account, int delta)
+    {
+        Pim.MoveAccount(account.HomeAccountId, delta);
+        _accounts = [.. Pim.Accounts];
+    }
+
+    private async Task Remove(AccountRef account)
+    {
+        await Pim.RemoveAccountAsync(account.HomeAccountId);
+        _accounts = [.. Pim.Accounts];
+    }
+
+    private void ResetAuth()
+    {
+        _settings.TenantId = "organizations";
+        _settings.GraphClientId = PimmerSettings.GraphPowerShellClientId;
+        _settings.ArmClientId = PimmerSettings.AzurePowerShellClientId;
+        _settings.UseBroker = true;
+    }
+
+    private async Task Save()
+    {
+        Pim.Store.Update(d =>
+        {
+            var s = d.Settings;
+            s.TenantId = string.IsNullOrWhiteSpace(_settings.TenantId) ? "organizations" : _settings.TenantId.Trim();
+            s.GraphClientId = _settings.GraphClientId.Trim();
+            s.ArmClientId = _settings.ArmClientId.Trim();
+            s.UseBroker = _settings.UseBroker;
+            s.DefaultDurationMinutes = Math.Max(5, _settings.DefaultDurationMinutes);
+            s.RefreshSeconds = Math.Max(15, _settings.RefreshSeconds);
+            s.ExpiryWarningMinutes = Math.Max(0, _settings.ExpiryWarningMinutes);
+        });
+        await OnClose.InvokeAsync();
+    }
+}

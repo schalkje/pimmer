@@ -1,0 +1,110 @@
+@inject PimService Pim
+
+<div class="overlay" @onkeydown="OnKey">
+    <div class="dialog" @onclick:stopPropagation="true">
+        <h2>@Model.Title</h2>
+
+        <div class="dialog-items">
+            @foreach (var item in Model.Items)
+            {
+                var account = Pim.AccountFor(item);
+                var effective = PimService.Clamp(TimeSpan.FromMinutes(Model.DurationMinutes), item.Policy);
+                <div class="dialog-item">
+                    <span class="name">@Main.Headline(item) <span class="kind k-@item.Kind">@PimKeys.KindLabel(item.Kind)</span></span>
+                    <span class="muted">@item.ScopeDisplay</span>
+                    <span class="acct" style="--c:@(account?.Color ?? "#888")"><span class="dot"></span>@account?.Label</span>
+                    <span class="muted">
+                        @if (Model.Loading) { <text>…</text> }
+                        else if (item.Policy is { } p)
+                        {
+                            <text>@Iso8601.Friendly(effective)@(effective < TimeSpan.FromMinutes(Model.DurationMinutes) ? " (max)" : "")</text>
+                            @if (p.AuthContextId is not null || p.RequiresMfa) { <span title="Extra sign-in may be requested"> 🔐</span> }
+                            @if (p.RequiresApproval) { <span title="Needs approval"> ✋</span> }
+                        }
+                        else { <text>policy unknown</text> }
+                    </span>
+                </div>
+            }
+        </div>
+
+        <label>Duration</label>
+        <select @bind="Model.DurationMinutes">
+            @foreach (var m in DurationOptions())
+            {
+                <option value="@m">@Iso8601.Friendly(TimeSpan.FromMinutes(m))</option>
+            }
+        </select>
+
+        <label>Justification @(RequiresJustification ? "*" : "")</label>
+        <input list="justifications" @bind="Model.Justification" @bind:event="oninput" placeholder="Why do you need this access?" autofocus />
+        <datalist id="justifications">
+            @foreach (var j in RecentJustifications)
+            {
+                <option value="@j"></option>
+            }
+        </datalist>
+
+        @if (RequiresTicket)
+        {
+            <div class="two">
+                <div>
+                    <label>Ticket number *</label>
+                    <input @bind="Model.TicketNumber" @bind:event="oninput" />
+                </div>
+                <div>
+                    <label>Ticket system</label>
+                    <input @bind="Model.TicketSystem" @bind:event="oninput" />
+                </div>
+            </div>
+        }
+
+        @if (_error is not null)
+        {
+            <div class="error">@_error</div>
+        }
+
+        <div class="dialog-buttons">
+            <button class="ghost" @onclick="OnCancel">Cancel</button>
+            <button class="primary" disabled="@Model.Loading" @onclick="Submit">@(Model.Mode == DialogMode.Extend ? "Extend" : "Activate") (Enter)</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DialogModel Model { get; set; } = default!;
+    [Parameter] public IReadOnlyList<string> RecentJustifications { get; set; } = [];
+    [Parameter] public EventCallback<ActivationRequest> OnSubmit { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private static readonly int[] StandardDurations = [30, 60, 120, 180, 240, 360, 480, 600, 720, 1440];
+    private string? _error;
+
+    private bool RequiresJustification => Model.Items.Any(i => i.Policy?.RequiresJustification == true);
+    private bool RequiresTicket => Model.Items.Any(i => i.Policy?.RequiresTicket == true);
+
+    private IEnumerable<int> DurationOptions()
+    {
+        var max = Model.Items.Select(i => i.Policy?.MaxDuration ?? PolicyParser.DefaultMaxDuration).DefaultIfEmpty(PolicyParser.DefaultMaxDuration).Max();
+        var options = StandardDurations.Where(m => m <= max.TotalMinutes).ToList();
+        if (!options.Contains((int)max.TotalMinutes)) options.Add((int)max.TotalMinutes);
+        if (!options.Contains(Model.DurationMinutes)) options.Add(Model.DurationMinutes);
+        return options.Where(m => m > 0).Distinct().Order();
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await OnCancel.InvokeAsync();
+        else if (e.Key == "Enter" && !Model.Loading) await Submit();
+    }
+
+    private async Task Submit()
+    {
+        if (RequiresJustification && string.IsNullOrWhiteSpace(Model.Justification)) { _error = "A justification is required."; return; }
+        if (RequiresTicket && string.IsNullOrWhiteSpace(Model.TicketNumber)) { _error = "A ticket number is required."; return; }
+        await OnSubmit.InvokeAsync(new ActivationRequest(
+            TimeSpan.FromMinutes(Model.DurationMinutes),
+            string.IsNullOrWhiteSpace(Model.Justification) ? null : Model.Justification.Trim(),
+            string.IsNullOrWhiteSpace(Model.TicketNumber) ? null : Model.TicketNumber.Trim(),
+            string.IsNullOrWhiteSpace(Model.TicketSystem) ? null : Model.TicketSystem.Trim()));
+    }
+}

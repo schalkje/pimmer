@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Pimmer.App/Pimmer.App.csproj" />
+    <Project Path="src/Pimmer.Core/Pimmer.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Pimmer.Core.Tests/Pimmer.Core.Tests.csproj" />
+  </Folder>
+</Solution>
