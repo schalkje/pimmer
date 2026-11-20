@@ -1,4 +1,6 @@
-# Pimmer
+<p align="center">
+  <img src="assets/pimmer-logo.png" alt="Pimmer — Privileged access. Simplified." width="480">
+</p>
 
 A fast, local Windows app for Microsoft Entra **PIM**. It covers Entra roles, PIM for Groups and Azure resource roles, for one or more accounts side by side.
 
