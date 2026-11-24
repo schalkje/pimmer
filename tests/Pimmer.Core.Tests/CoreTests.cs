@@ -184,6 +184,26 @@ public class CoreTests
         new(key, "home-1", "n", "s", PimKind.EntraRole, action, minutes, null, null, result, DateTimeOffset.Now);
 
     [Fact]
+    public void LocalStore_seeds_settings_from_defaults_only_on_first_run()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "pimmer-test-" + Guid.NewGuid().ToString("n"));
+        var defaults = dir + ".defaults.json";
+        try
+        {
+            File.WriteAllText(defaults, """{"GraphClientId":"graph-x","TenantId":"contoso.com"}""");
+            var first = new Pimmer.Core.Storage.LocalStore(dir, defaults);
+            Assert.Equal("graph-x", first.Data.Settings.GraphClientId);
+            Assert.Equal("contoso.com", first.Data.Settings.TenantId);
+            Assert.Equal(Pimmer.Core.Storage.PimmerSettings.AzurePowerShellClientId, first.Data.Settings.ArmClientId);
+
+            first.Update(d => d.Settings.GraphClientId = "user-choice");
+            File.WriteAllText(defaults, """{"GraphClientId":"changed"}""");
+            Assert.Equal("user-choice", new Pimmer.Core.Storage.LocalStore(dir, defaults).Data.Settings.GraphClientId);
+        }
+        finally { Directory.Delete(dir, recursive: true); File.Delete(defaults); }
+    }
+
+    [Fact]
     public void LocalStore_remembers_messages_per_item_and_group()
     {
         var dir = Path.Combine(Path.GetTempPath(), "pimmer-test-" + Guid.NewGuid().ToString("n"));

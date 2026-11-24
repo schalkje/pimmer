@@ -19,13 +19,20 @@ public sealed class LocalStore
     private readonly string _dataPath;
     private readonly string _cachePath;
 
-    public LocalStore(string dataDirectory)
+    /// <param name="defaultSettingsPath">
+    /// Optional <see cref="PimmerSettings"/> JSON (written by the installer) used to seed settings
+    /// when no data file exists yet. Existing user data is never overwritten.
+    /// </param>
+    public LocalStore(string dataDirectory, string? defaultSettingsPath = null)
     {
         DataDirectory = dataDirectory;
         Directory.CreateDirectory(dataDirectory);
         _dataPath = Path.Combine(dataDirectory, "pimmer.json");
         _cachePath = Path.Combine(dataDirectory, "cache.json");
-        Data = Load<StoreData>(_dataPath) ?? new StoreData();
+        var existing = Load<StoreData>(_dataPath);
+        Data = existing ?? new StoreData();
+        if (existing is null && defaultSettingsPath is not null)
+            Data.Settings = Load<PimmerSettings>(defaultSettingsPath) ?? Data.Settings;
         Cache = Load<CacheData>(_cachePath) ?? new CacheData();
     }
 

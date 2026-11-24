@@ -27,7 +27,7 @@ public partial class App : Application
         var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pimmer");
         var dataDir = profile is null ? root : Path.Combine(root, "profiles", profile);
 
-        var store = new LocalStore(dataDir);
+        var store = new LocalStore(dataDir, Path.Combine(AppContext.BaseDirectory, "defaults.json"));
         MainWindow? window = null;
         var tokens = new MsalTokenService(
             store.Data.Settings,
