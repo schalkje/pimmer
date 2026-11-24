@@ -11,7 +11,8 @@ Features:
 - Recent activations
 - Active view with countdowns, extend and deactivate
 - Pending requests
-- Policy-aware activation dialog for duration, justification and ticket requirements
+- Policy-aware activation dialog (always shown, Enter confirms) for duration, justification and ticket requirements
+- Justifications are remembered per role, group or resource, with a per-item default and saved messages
 - Conditional Access step-up
 
 No app registration and no backend: it signs in as you via the Windows broker (WAM), using the Microsoft Graph PowerShell and Azure PowerShell client IDs. Both are configurable in Settings.
@@ -54,3 +55,7 @@ From cmd.exe or Win+R use `%LOCALAPPDATA%\Programs\Pimmer\Pimmer.exe` instead.
 - [Research](docs/research.md)
 - [Requirements](docs/requirements.md)
 - [Design](docs/design.md). §12 lists what the MVP implements and where it deviates.
+
+## Copyright
+
+Copyright © 2026 schalken.net

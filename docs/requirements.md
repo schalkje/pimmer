@@ -49,13 +49,13 @@ Priority: **M** = must have (MVP), **S** = should have, **C** = could have.
 
 | ID | Requirement | Prio |
 |---|---|---|
-| F-ACT-1 | Activate an eligible item with one click, using defaults (last used duration and justification). | M |
+| F-ACT-1 | Activating an eligible item always opens the activation dialog, prefilled with defaults (last used duration, and the justification per item). It takes two clicks, or `Enter` twice from search. | M |
 | F-ACT-2 | Activation dialog with duration (clamped to the policy maximum), justification, and ticket number/system when required. Required fields are known up front from policy. | M |
 | F-ACT-3 | **Bulk activate**: select multiple items, or a whole custom group, and activate them with one shared justification and duration. Each item still honours its own policy maximum. | M |
 | F-ACT-4 | Show per-item progress and result: Activating → Active / Pending approval / Failed (with a friendly error). | M |
 | F-ACT-5 | **Deactivate** an active item, individually or in bulk. | M |
 | F-ACT-6 | **Extend** an active item (`selfExtend`) when it is close to expiry, if policy allows. | S |
-| F-ACT-7 | Remember recent justifications and offer them in a dropdown. | S |
+| F-ACT-7 | Every used justification is saved automatically and offered in a dropdown. Saved messages can be removed, not edited. The last message is remembered per PIM object, and one saved message can be set as the default for an object. The dialog always shows the justification field (optional unless policy requires it) with a length limit. | S |
 | F-ACT-8 | Optional scheduled start ("activate at 09:00"). | C |
 
 ### 2.5 Favorites, groups, recent
@@ -65,8 +65,8 @@ Priority: **M** = must have (MVP), **S** = should have, **C** = could have.
 | F-ORG-1 | Mark any eligible item as a **favorite** (star). Favorites show at the top / in their own view. | M |
 | F-ORG-2 | Create **custom groups** (for example "Daily ops", "Release prod", "Incident"), add/remove items, rename, reorder, delete. An item can be in several groups. | M |
 | F-ORG-3 | Activate a whole group in one action (uses F-ACT-3). Groups may contain items from both accounts. | M |
-| F-ORG-4 | Per-group default justification and duration. | S |
-| F-ORG-5 | **Recently used** view: the last N activations (item, account, time, duration, justification), with one-click "activate again". | M |
+| F-ORG-4 | Per-group default justification and duration. Without a default, the last message used for the group is prefilled. | S |
+| F-ORG-5 | **Recently used** view: the last N activations (item, account, time, duration, justification), with "activate again" (opens the dialog). | M |
 | F-ORG-6 | Sort by "most used" (activation count). | S |
 | F-ORG-7 | Export/import favorites and groups as JSON (backup, new laptop). | C |
 
@@ -104,5 +104,5 @@ Priority: **M** = must have (MVP), **S** = should have, **C** = could have.
 1. **Morning routine.** I open Pimmer and see both accounts already signed in. I click ▶ on my "Daily ops" group (3 Entra roles from admin + 2 Azure RG roles from user), and all 5 are active within about 1 minute, with countdowns visible.
 2. **Search.** I type "sql prod", find "SQL DB Contributor – rg-sql-prod", press Enter, enter a ticket number (the policy requires it), and the role becomes active.
 3. **Step-up.** I activate Global Reader, which requires authentication context `c1`. A Windows Hello / MFA prompt appears, then the activation succeeds without me restarting anything.
-4. **Recent.** I open "Recent" and re-activate yesterday's role with the same justification in one click.
+4. **Recent.** I open "Recent" and re-activate yesterday's role with the same justification in two clicks.
 5. **Status.** The "Active" view shows everything I have active across both accounts and when it expires. I deactivate one I no longer need.

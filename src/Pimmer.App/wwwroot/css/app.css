@@ -122,11 +122,27 @@ input[type=checkbox] { accent-color: var(--accent); }
 .dialog input:not([type=checkbox]):not([type=color]), .dialog select { width: 100%; }
 .dialog .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .dialog-items { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; }
-.dialog-item { display: grid; grid-template-columns: 1fr 1fr 80px 110px; gap: 8px; padding: 6px 8px; font-size: 12px; border-bottom: 1px solid var(--line); align-items: center; }
+.dialog-item { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; font-size: 12px; border-bottom: 1px solid var(--line); }
+.dialog-item .details { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
+.dialog-item .details .scope { flex: 1 1 200px; min-width: 0; }
 .dialog-item:last-child { border-bottom: none; }
 .dialog-item .name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .dialog .error { color: var(--err); margin-top: 8px; }
 .dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.dialog .msg-meta { font-size: 11px; text-align: right; }
+.dialog textarea { width: 100%; resize: vertical; min-height: 4.5em; box-sizing: border-box; font: inherit; }
+.dialog .msg-input { position: relative; }
+.dialog .msg-input textarea { padding-right: 28px; }
+.dialog .msg-clear { position: absolute; top: 4px; right: 4px; padding: 0 6px; }
+.dialog .slider-row { display: flex; align-items: center; gap: 12px; }
+.dialog .slider-row input[type=range] { flex: 1; }
+.dialog .slider-value { min-width: 56px; text-align: right; font-weight: 600; }
+.dialog .msg-default { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dialog .msg-toggle { margin-top: 6px; padding-left: 0; font-size: 12px; }
+.dialog .msg-list { max-height: 140px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; }
+.dialog .msg-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.dialog .msg-row:last-child { border-bottom: none; }
+.dialog .msg-use { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .account-row input[type=color] { width: 32px; height: 28px; padding: 0; border: none; background: none; }
 .account-row .label-input { width: 140px !important; }

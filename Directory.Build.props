@@ -1,0 +1,9 @@
+<Project>
+
+  <PropertyGroup>
+    <Company>schalken.net</Company>
+    <Authors>schalken.net</Authors>
+    <Copyright>Copyright © $([System.DateTime]::Now.Year) schalken.net</Copyright>
+  </PropertyGroup>
+
+</Project>

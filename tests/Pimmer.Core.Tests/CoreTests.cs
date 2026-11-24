@@ -161,4 +161,49 @@ public class CoreTests
         Assert.Equal(TimeSpan.FromHours(2), PimService.Clamp(TimeSpan.FromHours(8), policy));
         Assert.Equal(TimeSpan.FromHours(8), PimService.Clamp(TimeSpan.FromHours(8), null));
     }
+
+    [Fact]
+    public void MessageResolver_follows_precedence()
+    {
+        var data = new Pimmer.Core.Storage.StoreData { RecentJustifications = ["overall"] };
+        var a = Item("a");
+        var group = new Pimmer.Core.Storage.PimGroup { LastJustification = "group last" };
+
+        Assert.Equal("overall", MessageResolver.Resolve([a], null, data));
+        data.ItemMessages["a"] = new() { Last = "item last" };
+        Assert.Equal("item last", MessageResolver.Resolve([a], null, data));
+        data.ItemMessages["a"].Default = "item default";
+        Assert.Equal("item default", MessageResolver.Resolve([a], null, data));
+        Assert.Equal("group last", MessageResolver.Resolve([a], group, data));
+        group.DefaultJustification = "group default";
+        Assert.Equal("group default", MessageResolver.Resolve([a], group, data));
+        Assert.Equal("", MessageResolver.Resolve([a, Item("b")], null, data));
+    }
+
+    [Fact]
+    public void LocalStore_remembers_messages_per_item_and_group()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "pimmer-test-" + Guid.NewGuid().ToString("n"));
+        try
+        {
+            var store = new Pimmer.Core.Storage.LocalStore(dir);
+            var group = store.AddGroup("g");
+
+            store.RememberMessage("  work  ", "a", null, setAsDefault: true);
+            store.RememberMessage("other", "a", null, setAsDefault: false);
+            store.RememberMessage("for group", "a", group.Id, setAsDefault: true);
+            store.RememberMessage("", "a", null, setAsDefault: false);
+
+            var reloaded = new Pimmer.Core.Storage.LocalStore(dir).Data;
+            Assert.Equal("other", reloaded.ItemMessages["a"].Last);
+            Assert.Equal("work", reloaded.ItemMessages["a"].Default);
+            Assert.Equal("for group", reloaded.Groups[0].LastJustification);
+            Assert.Equal(["for group", "other", "work"], reloaded.RecentJustifications);
+
+            store.RemoveSavedMessage("work");
+            Assert.Null(store.Data.ItemMessages["a"].Default);
+            Assert.DoesNotContain("work", store.Data.RecentJustifications);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 }

@@ -11,38 +11,68 @@
                 var effective = PimService.Clamp(TimeSpan.FromMinutes(Model.DurationMinutes), item.Policy);
                 <div class="dialog-item">
                     <span class="name">@Main.Headline(item) <span class="kind k-@item.Kind">@PimKeys.KindLabel(item.Kind)</span></span>
-                    <span class="muted">@item.ScopeDisplay</span>
-                    <span class="acct" style="--c:@(account?.Color ?? "#888")"><span class="dot"></span>@account?.Label</span>
-                    <span class="muted">
-                        @if (Model.Loading) { <text>…</text> }
-                        else if (item.Policy is { } p)
-                        {
-                            <text>@Iso8601.Friendly(effective)@(effective < TimeSpan.FromMinutes(Model.DurationMinutes) ? " (max)" : "")</text>
-                            @if (p.AuthContextId is not null || p.RequiresMfa) { <span title="Extra sign-in may be requested"> 🔐</span> }
-                            @if (p.RequiresApproval) { <span title="Needs approval"> ✋</span> }
-                        }
-                        else { <text>policy unknown</text> }
-                    </span>
+                    <div class="details">
+                        <span class="muted scope" title="@item.ScopeId">@Main.SubText(item)</span>
+                        <span class="acct" style="--c:@(account?.Color ?? "#888")"><span class="dot"></span>@account?.Label</span>
+                        <span class="muted">
+                            @if (Model.Loading) { <text>…</text> }
+                            else if (item.Policy is { } p)
+                            {
+                                <text>@Iso8601.Friendly(effective)@(effective < TimeSpan.FromMinutes(Model.DurationMinutes) ? " (max)" : "")</text>
+                                @if (p.AuthContextId is not null || p.RequiresMfa) { <span title="Extra sign-in may be requested"> 🔐</span> }
+                                @if (p.RequiresApproval) { <span title="Needs approval"> ✋</span> }
+                            }
+                            else { <text>policy unknown</text> }
+                        </span>
+                    </div>
                 </div>
             }
         </div>
 
-        <label>Duration</label>
-        <select @bind="Model.DurationMinutes">
-            @foreach (var m in DurationOptions())
-            {
-                <option value="@m">@Iso8601.Friendly(TimeSpan.FromMinutes(m))</option>
-            }
-        </select>
+        <label>Duration @DurationRange()</label>
+        <div class="slider-row">
+            <input type="range" min="0" max="@(DurationOptions().Count() - 1)" step="1" @bind="DurationIndex" @bind:event="oninput" />
+            <span class="slider-value">@Iso8601.Friendly(TimeSpan.FromMinutes(Model.DurationMinutes))</span>
+        </div>
 
-        <label>Justification @(RequiresJustification ? "*" : "")</label>
-        <input list="justifications" @bind="Model.Justification" @bind:event="oninput" placeholder="Why do you need this access?" autofocus />
-        <datalist id="justifications">
-            @foreach (var j in RecentJustifications)
+        <label>Justification @(RequiresJustification ? "*" : "(optional)")</label>
+        <div class="msg-input">
+            <textarea @ref="_justificationBox" rows="3" maxlength="@MessageResolver.MaxLength" @bind="Model.Justification" @bind:event="oninput" placeholder="Why do you need this access? (Shift+Enter for a new line)"></textarea>
+            @if (!string.IsNullOrEmpty(Model.Justification))
             {
-                <option value="@j"></option>
+                <button class="ghost msg-clear" type="button" title="Clear" @onclick="ClearJustification">✕</button>
             }
-        </datalist>
+        </div>
+        <div class="muted msg-meta">@(Model.Justification?.Length ?? 0) / @MessageResolver.MaxLength</div>
+
+        @if (SingleItem is not null)
+        {
+            <div class="msg-default">
+                <label class="check"><input type="checkbox" @bind="Model.SetAsDefault" /> Use current justification as default for this item</label>
+                @if (ItemDefault is not null)
+                {
+                    <button class="ghost" type="button" @onclick="OnClearDefault">Clear default</button>
+                }
+            </div>
+        }
+
+        @if (RecentJustifications.Count > 0)
+        {
+            <button class="ghost msg-toggle" type="button" @onclick="() => _showSaved = !_showSaved">Saved messages (@RecentJustifications.Count) @(_showSaved ? "▲" : "▼")</button>
+            @if (_showSaved)
+            {
+                <div class="msg-list">
+                    @foreach (var j in RecentJustifications)
+                    {
+                        var msg = j;
+                        <div class="msg-row">
+                            <button class="ghost msg-use" type="button" title="Use this message" @onclick="() => Model.Justification = msg">@(msg == ItemDefault ? "★ " : "")@msg</button>
+                            <button class="ghost" type="button" title="Remove this saved message" @onclick="() => OnRemoveMessage.InvokeAsync(msg)">✕</button>
+                        </div>
+                    }
+                </div>
+            }
+        }
 
         @if (RequiresTicket)
         {
@@ -73,14 +103,52 @@
 @code {
     [Parameter, EditorRequired] public DialogModel Model { get; set; } = default!;
     [Parameter] public IReadOnlyList<string> RecentJustifications { get; set; } = [];
+    [Parameter] public string? ItemDefault { get; set; }
+    [Parameter] public EventCallback OnClearDefault { get; set; }
+    [Parameter] public EventCallback<string> OnRemoveMessage { get; set; }
     [Parameter] public EventCallback<ActivationRequest> OnSubmit { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
 
     private static readonly int[] StandardDurations = [30, 60, 120, 180, 240, 360, 480, 600, 720, 1440];
     private string? _error;
+    private bool _showSaved = true;
+    private ElementReference _justificationBox;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await _justificationBox.FocusAsync();
+    }
+
+    private int DurationIndex
+    {
+        get => Math.Max(0, DurationOptions().ToList().IndexOf(Model.DurationMinutes));
+        set
+        {
+            var options = DurationOptions().ToList();
+            if (value >= 0 && value < options.Count) Model.DurationMinutes = options[value];
+        }
+    }
+
+    private async Task ClearJustification()
+    {
+        Model.Justification = "";
+        await _justificationBox.FocusAsync();
+    }
+
+    private PimItem? SingleItem => Model.GroupId is null && Model.Items.Count == 1 ? Model.Items[0] : null;
 
     private bool RequiresJustification => Model.Items.Any(i => i.Policy?.RequiresJustification == true);
     private bool RequiresTicket => Model.Items.Any(i => i.Policy?.RequiresTicket == true);
+
+    private string DurationRange()
+    {
+        if (Model.Loading) return "";
+        var options = DurationOptions().ToList();
+        if (options.Count == 0) return "";
+        var text = $"({Iso8601.Friendly(TimeSpan.FromMinutes(options[0]))}–{Iso8601.Friendly(TimeSpan.FromMinutes(options[^1]))}";
+        var maxes = Model.Items.Select(i => i.Policy?.MaxDuration).Distinct().Count();
+        return text + (maxes > 1 ? ", lower limits apply per item)" : ")");
+    }
 
     private IEnumerable<int> DurationOptions()
     {
@@ -94,13 +162,15 @@
     private async Task OnKey(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") await OnCancel.InvokeAsync();
-        else if (e.Key == "Enter" && !Model.Loading) await Submit();
+        else if (e.Key == "Enter" && !e.ShiftKey && !Model.Loading) await Submit();
     }
 
     private async Task Submit()
     {
+        Model.Justification = Model.Justification?.Trim() ?? "";
         if (RequiresJustification && string.IsNullOrWhiteSpace(Model.Justification)) { _error = "A justification is required."; return; }
         if (RequiresTicket && string.IsNullOrWhiteSpace(Model.TicketNumber)) { _error = "A ticket number is required."; return; }
+        if ((Model.Justification?.Trim().Length ?? 0) > MessageResolver.MaxLength) { _error = $"The justification is limited to {MessageResolver.MaxLength} characters."; return; }
         await OnSubmit.InvokeAsync(new ActivationRequest(
             TimeSpan.FromMinutes(Model.DurationMinutes),
             string.IsNullOrWhiteSpace(Model.Justification) ? null : Model.Justification.Trim(),

@@ -11,5 +11,7 @@ public sealed class DialogModel
     public string Justification { get; set; } = "";
     public string TicketNumber { get; set; } = "";
     public string TicketSystem { get; set; } = "";
+    public string? GroupId { get; set; }
+    public bool SetAsDefault { get; set; }
     public bool Loading { get; set; }
 }

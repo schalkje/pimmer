@@ -7,7 +7,7 @@ namespace Pimmer.Core.Storage;
 public sealed class LocalStore
 {
     public const int MaxHistory = 300;
-    public const int MaxJustifications = 15;
+    public const int MaxJustifications = 50;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -106,6 +106,44 @@ public sealed class LocalStore
             if (d.RecentJustifications.Count > MaxJustifications) d.RecentJustifications.RemoveAt(d.RecentJustifications.Count - 1);
         }
         d.LastDurationMinutes = durationMinutes;
+    });
+
+    /// <summary>
+    /// Saves a used message. A group activation stores it on the group only; a single-item
+    /// activation stores it as that item's last message (and optionally its default).
+    /// </summary>
+    public void RememberMessage(string? message, string? itemKey, string? groupId, bool setAsDefault) => Update(d =>
+    {
+        message = message?.Trim();
+        if (string.IsNullOrEmpty(message)) return;
+        d.RecentJustifications.Remove(message);
+        d.RecentJustifications.Insert(0, message);
+        if (d.RecentJustifications.Count > MaxJustifications) d.RecentJustifications.RemoveRange(MaxJustifications, d.RecentJustifications.Count - MaxJustifications);
+
+        if (groupId is not null)
+        {
+            var g = d.Groups.FirstOrDefault(x => x.Id == groupId);
+            if (g is not null) g.LastJustification = message;
+        }
+        else if (itemKey is not null)
+        {
+            if (!d.ItemMessages.TryGetValue(itemKey, out var m)) d.ItemMessages[itemKey] = m = new ItemMessages();
+            m.Last = message;
+            if (setAsDefault) m.Default = message;
+        }
+    });
+
+    public void ClearItemDefault(string itemKey) => Update(d =>
+    {
+        if (!d.ItemMessages.TryGetValue(itemKey, out var m)) return;
+        m.Default = null;
+        if (m.Last is null) d.ItemMessages.Remove(itemKey);
+    });
+
+    public void RemoveSavedMessage(string message) => Update(d =>
+    {
+        d.RecentJustifications.Remove(message);
+        foreach (var m in d.ItemMessages.Values.Where(x => x.Default == message)) m.Default = null;
     });
 
     private static T? Load<T>(string path) where T : class

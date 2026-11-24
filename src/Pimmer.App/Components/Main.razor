@@ -197,7 +197,8 @@
 
 @if (_dialog is not null)
 {
-    <ActivationDialog Model="_dialog" RecentJustifications="data.RecentJustifications" OnSubmit="SubmitDialog" OnCancel="() => _dialog = null" />
+    <ActivationDialog Model="_dialog" RecentJustifications="data.RecentJustifications" ItemDefault="DialogItemDefault()"
+                      OnClearDefault="ClearItemDefault" OnRemoveMessage="RemoveSavedMessage" OnSubmit="SubmitDialog" OnCancel="() => _dialog = null" />
 }
 
 @if (_showSettings)
@@ -365,7 +366,7 @@
         if (e.Key == "Enter")
         {
             var eligible = visible.Where(i => i.State == PimState.Eligible).ToList();
-            if (eligible.Count == 1) await QuickActivate(eligible[0], e.ShiftKey);
+            if (eligible.Count == 1) await QuickActivate(eligible[0]);
             else if (eligible.Count > 1) AddToast("Several matches: refine the search or select items.", "info");
         }
     }
@@ -401,7 +402,7 @@
 
     private static string Name(PimItem item) => item.ScopeName is { } n ? $"{item.DisplayName} on {n}" : item.DisplayName;
 
-    private static string SubText(PimItem item)
+    public static string SubText(PimItem item)
     {
         if (item.Kind == PimKind.Group) return "PIM group";
         var s = item.ScopeDisplay;
@@ -490,7 +491,7 @@
                 @switch (item.State)
                 {
                     case PimState.Eligible:
-                        <button class="play" disabled="@busy" title="Activate (Shift+click for options)" @onclick="e => QuickActivate(item, e.ShiftKey)">▶</button>
+                        <button class="play" disabled="@busy" title="Activate" @onclick="() => QuickActivate(item)">▶</button>
                         break;
                     case PimState.Active:
                         <button class="ghost" disabled="@busy" @onclick="() => OpenDialog([item], DialogMode.Extend, null)">Extend</button>
@@ -520,9 +521,10 @@
                 var entry = h;
                 var account = accounts.GetValueOrDefault(entry.AccountId);
                 var current = itemsByKey.GetValueOrDefault(entry.ItemKey);
+                var isFavorite = Pim.Store.IsFavorite(entry.ItemKey);
                 <div class="row" @key="entry.ItemKey">
                     <span></span>
-                    <span></span>
+                    <button class="star @(isFavorite ? "on" : "")" title="@(isFavorite ? "Remove from favorites" : "Add to favorites")" @onclick="() => Pim.Store.ToggleFavorite(entry.ItemKey)">@(isFavorite ? "★" : "☆")</button>
                     <div class="main">
                         <div class="title">@entry.DisplayName <span class="kind k-@entry.Kind">@PimKeys.KindLabel(entry.Kind)</span></div>
                         <div class="sub">@entry.ScopeDisplay · @entry.At.ToLocalTime().ToString("ddd d MMM HH:mm") · @Iso8601.Friendly(TimeSpan.FromMinutes(entry.DurationMinutes)) · “@entry.Justification”</div>
@@ -565,30 +567,17 @@
 
     private Task Refresh() => SafeRefresh();
 
-    private async Task QuickActivate(PimItem item, bool showDialog)
+    // Activation always goes through the dialog (two clicks), so the user sees and confirms the justification.
+    private Task QuickActivate(PimItem item)
     {
-        var data = Pim.Store.Data;
-        var policy = await Pim.GetPolicyAsync(item);
-        var justification = data.RecentJustifications.FirstOrDefault();
-        var minutes = data.LastDurationMinutes ?? data.Settings.DefaultDurationMinutes;
-        if (showDialog || policy is null || policy.RequiresTicket || (policy.RequiresJustification && string.IsNullOrWhiteSpace(justification)))
-        {
-            OpenDialog([item], DialogMode.Activate, null);
-            return;
-        }
-        await RunActivation([Pim.WithLatest(item)], new ActivationRequest(TimeSpan.FromMinutes(minutes), justification, null, null));
+        OpenDialog([item], DialogMode.Activate, null);
+        return Task.CompletedTask;
     }
 
-    private async Task ActivateAgain(PimItem item, HistoryEntry entry)
+    private Task ActivateAgain(PimItem item, HistoryEntry entry)
     {
-        var policy = await Pim.GetPolicyAsync(item);
-        var request = new ActivationRequest(TimeSpan.FromMinutes(Math.Max(5, entry.DurationMinutes)), entry.Justification, entry.Ticket, null);
-        if (policy is null || PimService.Validate(Pim.WithLatest(item), request) is not null)
-        {
-            OpenDialog([item], DialogMode.Activate, null, request);
-            return;
-        }
-        await RunActivation([Pim.WithLatest(item)], request);
+        OpenDialog([item], DialogMode.Activate, null, new ActivationRequest(TimeSpan.FromMinutes(Math.Max(5, entry.DurationMinutes)), null, entry.Ticket, null));
+        return Task.CompletedTask;
     }
 
     private void ActivateGroup(PimGroup group)
@@ -614,7 +603,8 @@
             Items = targets,
             Title = group is not null ? $"Activate “{group.Name}”" : $"{mode} {targets.Count} item(s)",
             DurationMinutes = (int?)prefill?.Duration.TotalMinutes ?? group?.DefaultDurationMinutes ?? data.LastDurationMinutes ?? data.Settings.DefaultDurationMinutes,
-            Justification = prefill?.Justification ?? group?.DefaultJustification ?? data.RecentJustifications.FirstOrDefault() ?? "",
+            Justification = MessageResolver.Resolve(targets, group, data),
+            GroupId = group?.Id,
             TicketNumber = prefill?.TicketNumber ?? "",
             Loading = true
         };
@@ -627,10 +617,25 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private string? DialogItemDefault()
+    {
+        if (_dialog is not { GroupId: null, Items: [var item] }) return null;
+        return Pim.Store.Read(d => d.ItemMessages.GetValueOrDefault(item.Key)?.Default);
+    }
+
+    private void ClearItemDefault()
+    {
+        if (_dialog is { GroupId: null, Items: [var item] }) Pim.Store.ClearItemDefault(item.Key);
+    }
+
+    private void RemoveSavedMessage(string message) => Pim.Store.RemoveSavedMessage(message);
+
     private async Task SubmitDialog(ActivationRequest request)
     {
         var dialog = _dialog!;
         _dialog = null;
+        var single = dialog.GroupId is null && dialog.Items.Count == 1 ? dialog.Items[0] : null;
+        Pim.Store.RememberMessage(request.Justification, single?.Key, dialog.GroupId, dialog.SetAsDefault && single is not null);
         if (dialog.Mode == DialogMode.Extend)
         {
             var results = await Pim.ExtendAsync(dialog.Items, request);

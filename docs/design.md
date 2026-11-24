@@ -175,7 +175,7 @@ ActivateAsync(items, ActivationRequest { Duration, Justification, Ticket? }):
 |---|---|
 | `accounts` | home_account_id PK, upn, object_id, tenant_id, label, color, sort_order |
 | `favorites` | item_key PK, added_at |
-| `groups` | id PK, name, sort_order, default_duration, default_justification |
+| `groups` | id PK, name, sort_order, default_duration, default_justification, last_justification |
 | `group_items` | group_id, item_key, sort_order |
 | `history` | id PK, item_key, account_id, display_name, scope_display, action, duration, justification, ticket, result, at |
 | `settings` | key PK, value (JSON) |
@@ -245,9 +245,9 @@ ActivateAsync(items, ActivationRequest { Duration, Justification, Ticket? }):
 └─────────────────────────────────────────────────┘
 ```
 
-- **Required fields:** the dialog only shows ticket and justification fields when at least one item requires them. Required fields are validated before submit.
-- **Defaults:** the last-used duration and justification are prefilled. Group defaults override them (F-ORG-4).
-- **Quick activate:** from a favorite or Recent, ▶ activates immediately with the defaults when policy allows it (no ticket required). Shift+click opens the dialog.
+- **Required fields:** the justification field is always shown (optional unless an item's policy requires it, and limited to `MessageResolver.MaxLength` characters). The ticket fields only show when at least one item requires them. Required fields are validated before submit.
+- **Defaults:** the last-used duration is prefilled. The justification comes from `MessageResolver`: for one item, its default, else its last message, else the last message used overall. For a group, the group default, else the group's last message. An ad-hoc multi-select starts empty. Group and bulk messages are never stored as an item's last message. "Use as default for this item" sets the item default. Used messages are saved automatically, and can be removed from the dialog.
+- **Always a dialog:** ▶ on a favorite, search `Enter` and Recent "Again" all open the dialog (extend does too), and `Enter` confirms it.
 - **Progress:** after submit, each row shows ⏳ → ✅ Active / 🕓 Pending / ❌ error text with Retry.
 
 ### 7.3 Settings

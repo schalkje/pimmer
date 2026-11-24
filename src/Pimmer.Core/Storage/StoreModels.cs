@@ -22,6 +22,15 @@ public sealed class PimGroup
     public List<string> ItemKeys { get; set; } = [];
     public int? DefaultDurationMinutes { get; set; }
     public string? DefaultJustification { get; set; }
+    /// <summary>Message last used when activating this group as a whole.</summary>
+    public string? LastJustification { get; set; }
+}
+
+/// <summary>Messages remembered for one PIM object, keyed by <see cref="PimItem.Key"/>.</summary>
+public sealed class ItemMessages
+{
+    public string? Last { get; set; }
+    public string? Default { get; set; }
 }
 
 public sealed record HistoryEntry(
@@ -44,7 +53,9 @@ public sealed class StoreData
     public List<string> Favorites { get; set; } = [];
     public List<PimGroup> Groups { get; set; } = [];
     public List<HistoryEntry> History { get; set; } = [];
+    /// <summary>Saved messages, most recently used first. Every used message is added automatically.</summary>
     public List<string> RecentJustifications { get; set; } = [];
+    public Dictionary<string, ItemMessages> ItemMessages { get; set; } = [];
     public int? LastDurationMinutes { get; set; }
 }
 
