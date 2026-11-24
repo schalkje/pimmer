@@ -32,6 +32,26 @@ Click **Sign in** and use **＋** in the top bar to add your second (admin) acco
 
 Pimmer requests only permissions your tenant has already granted to these Microsoft apps (`/.default`), so no consent or approval screen should appear. If you see "Approval required", cancel it and check that you're running the latest build. Tokens are delegated: Pimmer can never do more than your account can do in the portal.
 
+## Install (installer)
+
+`Pimmer-Setup-<version>.exe` installs per user (no admin rights, no .NET needed) to `%LOCALAPPDATA%\Programs\Pimmer`, with a Start menu entry, optional desktop shortcut and uninstaller. Upgrading in place keeps your data in `%LOCALAPPDATA%\Pimmer`. The installer is unsigned, so SmartScreen may warn.
+
+Silent install, optionally pre-seeding settings for a department rollout:
+
+```powershell
+.\Pimmer-Setup-1.0.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TenantId=contoso.com /GraphClientId=<guid> /ArmClientId=<guid>
+```
+
+Those values are written to `defaults.json` in the install folder (a `defaults.json` next to the installer is copied instead if no switches are given). They only seed Settings on a user's first run and never overwrite existing settings. A silent uninstall keeps user data; add `/REMOVEDATA` to delete it.
+
+Build it with [Inno Setup](https://jrsoftware.org/inno-setup/downloads) 6 or 7 installed:
+
+```powershell
+.\scripts\build-installer.ps1 -Version 1.0.0   # → artifacts\Pimmer-Setup-1.0.0.exe
+```
+
+Pushing a `v*` tag builds it in GitHub Actions and attaches it to a release.
+
 ## Install (shortcut)
 
 ```powershell
