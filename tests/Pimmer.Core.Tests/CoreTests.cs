@@ -180,6 +180,9 @@ public class CoreTests
         Assert.Equal("", MessageResolver.Resolve([a, Item("b")], null, data));
     }
 
+    private static Pimmer.Core.Storage.HistoryEntry Entry(string key, string action, int minutes, string result = "Succeeded") =>
+        new(key, "home-1", "n", "s", PimKind.EntraRole, action, minutes, null, null, result, DateTimeOffset.Now);
+
     [Fact]
     public void LocalStore_remembers_messages_per_item_and_group()
     {
@@ -199,6 +202,11 @@ public class CoreTests
             Assert.Equal("work", reloaded.ItemMessages["a"].Default);
             Assert.Equal("for group", reloaded.Groups[0].LastJustification);
             Assert.Equal(["for group", "other", "work"], reloaded.RecentJustifications);
+
+            store.RecordActivation([Entry("a", "Activate", 120), Entry("b", "Activate", 30, "Failed"), Entry("c", "Extend", 60)], null, 120);
+            Assert.Equal(120, store.Data.ItemMessages["a"].LastDurationMinutes);
+            Assert.False(store.Data.ItemMessages.ContainsKey("b"));
+            Assert.False(store.Data.ItemMessages.ContainsKey("c"));
 
             store.RemoveSavedMessage("work");
             Assert.Null(store.Data.ItemMessages["a"].Default);

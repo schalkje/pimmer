@@ -98,6 +98,11 @@ public sealed class LocalStore
     public void RecordActivation(IEnumerable<HistoryEntry> entries, string? justification, int durationMinutes) => Update(d =>
     {
         d.History.InsertRange(0, entries);
+        foreach (var e in entries.Where(e => e.Action == "Activate" && e.Result != "Failed" && e.DurationMinutes > 0))
+        {
+            if (!d.ItemMessages.TryGetValue(e.ItemKey, out var m)) d.ItemMessages[e.ItemKey] = m = new ItemMessages();
+            m.LastDurationMinutes = e.DurationMinutes;
+        }
         if (d.History.Count > MaxHistory) d.History.RemoveRange(MaxHistory, d.History.Count - MaxHistory);
         if (!string.IsNullOrWhiteSpace(justification))
         {
@@ -137,7 +142,7 @@ public sealed class LocalStore
     {
         if (!d.ItemMessages.TryGetValue(itemKey, out var m)) return;
         m.Default = null;
-        if (m.Last is null) d.ItemMessages.Remove(itemKey);
+        if (m.Last is null && m.LastDurationMinutes is null) d.ItemMessages.Remove(itemKey);
     });
 
     public void RemoveSavedMessage(string message) => Update(d =>

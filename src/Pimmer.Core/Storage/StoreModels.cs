@@ -31,6 +31,8 @@ public sealed class ItemMessages
 {
     public string? Last { get; set; }
     public string? Default { get; set; }
+    /// <summary>Duration (clamped to policy) of the last activation of this item.</summary>
+    public int? LastDurationMinutes { get; set; }
 }
 
 public sealed record HistoryEntry(

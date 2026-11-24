@@ -602,7 +602,7 @@
             Mode = mode,
             Items = targets,
             Title = group is not null ? $"Activate “{group.Name}”" : $"{mode} {targets.Count} item(s)",
-            DurationMinutes = (int?)prefill?.Duration.TotalMinutes ?? group?.DefaultDurationMinutes ?? data.LastDurationMinutes ?? data.Settings.DefaultDurationMinutes,
+            DurationMinutes = (int?)prefill?.Duration.TotalMinutes ?? group?.DefaultDurationMinutes ?? LastDurationFor(targets, data) ?? data.LastDurationMinutes ?? data.Settings.DefaultDurationMinutes,
             Justification = MessageResolver.Resolve(targets, group, data),
             GroupId = group?.Id,
             TicketNumber = prefill?.TicketNumber ?? "",
@@ -613,9 +613,14 @@
         try { await Pim.EnsurePoliciesAsync(targets); }
         catch (Exception ex) { AddToast("Could not load policies: " + ErrorMapper.ToFriendly(ex), "warn"); }
         dialog.Items = [.. targets.Select(Pim.WithLatest)];
+        var max = dialog.Items.Select(i => i.Policy?.MaxDuration ?? PolicyParser.DefaultMaxDuration).DefaultIfEmpty(PolicyParser.DefaultMaxDuration).Max();
+        if (dialog.DurationMinutes > max.TotalMinutes) dialog.DurationMinutes = (int)max.TotalMinutes;
         dialog.Loading = false;
         await InvokeAsync(StateHasChanged);
     }
+
+    private static int? LastDurationFor(List<PimItem> targets, StoreData data) =>
+        targets is [var item] ? data.ItemMessages.GetValueOrDefault(item.Key)?.LastDurationMinutes : null;
 
     private string? DialogItemDefault()
     {
